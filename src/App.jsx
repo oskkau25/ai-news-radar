@@ -22,10 +22,15 @@ const newsItems = [
 ];
 
 function App() {
+  const handleRefresh = () => {
+    alert("Refresh coming soon");
+  };
+
   return (
     <main className="page">
       <h1>AI News Radar</h1>
       <p className="subtitle">Example feed (hard-coded for now)</p>
+      <button className="refresh-button" onClick={handleRefresh}>Refresh News</button>
       <section className="news-list">
         {newsItems.map((item) => (
           <article key={item.title} className="news-card">
