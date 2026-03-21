@@ -11,14 +11,6 @@ const newsItems = [
     title: "Google DeepMind update",
     summary: "DeepMind shares progress on agent planning and tool use.",
   },
-  {
-    title: "Hugging Face update",
-    summary: "Hugging Face launches new community benchmarks for open models.",
-  },
-  {
-    title: "Meta AI update",
-    summary: "Meta AI publishes a new set of lightweight research models.",
-  },
 ];
 
 function App() {
