@@ -1,10 +1,25 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const STORAGE_KEY = "ai-news-radar-read-items";
 const NEWS_API_URL = "https://hn.algolia.com/api/v1/search?query=ai";
 
+async function fetchNews() {
+  const response = await fetch(NEWS_API_URL);
+  const data = await response.json();
+
+  return data.hits
+    .filter((item) => item.title && item.url)
+    .slice(0, 10)
+    .map((item) => ({
+      id: item.objectID,
+      title: item.title,
+      url: item.url,
+    }));
+}
+
 function App() {
   const [newsItems, setNewsItems] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [readItems, setReadItems] = useState(() => {
     const savedItems = localStorage.getItem(STORAGE_KEY);
 
@@ -15,53 +30,25 @@ function App() {
     return JSON.parse(savedItems);
   });
 
-  useEffect(() => {
-    const fetchNews = async () => {
-      try {
-        const response = await fetch(NEWS_API_URL);
-        const data = await response.json();
-
-        const items = data.hits
-          .filter((item) => item.title && item.url)
-          .slice(0, 10)
-          .map((item) => ({
-            id: item.objectID,
-            title: item.title,
-            url: item.url,
-          }));
-
-        setNewsItems(items);
-      } catch (error) {
-        console.error("Failed to fetch news:", error);
-      }
-    };
-
-    fetchNews();
+  const loadNews = useCallback(async () => {
+    setLoading(true);
+    try {
+      const items = await fetchNews();
+      setNewsItems(items);
+    } catch (error) {
+      console.error("Failed to fetch news:", error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadNews();
+  }, [loadNews]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(readItems));
   }, [readItems]);
-
-  const handleRefresh = async () => {
-    try {
-      const response = await fetch(NEWS_API_URL);
-      const data = await response.json();
-
-      const items = data.hits
-        .filter((item) => item.title && item.url)
-        .slice(0, 10)
-        .map((item) => ({
-          id: item.objectID,
-          title: item.title,
-          url: item.url,
-        }));
-
-      setNewsItems(items);
-    } catch (error) {
-      console.error("Failed to refresh news:", error);
-    }
-  };
 
   const toggleRead = (id) => {
     setReadItems((currentReadItems) => ({
@@ -70,12 +57,33 @@ function App() {
     }));
   };
 
+  const markAllAsRead = () => {
+    setReadItems((current) => {
+      const next = { ...current };
+      for (const item of newsItems) {
+        next[item.id] = true;
+      }
+      return next;
+    });
+  };
+
   return (
     <main className="page">
       <h1>AI News Radar</h1>
       <p className="subtitle">Latest AI-related stories from Hacker News</p>
-      <button className="refresh-button" onClick={handleRefresh}>Refresh News</button>
+      <button className="refresh-button" onClick={() => void loadNews()}>
+        Refresh News
+      </button>
+      {newsItems.length > 0 && (
+        <button className="refresh-button" onClick={markAllAsRead}>
+          Mark all as read
+        </button>
+      )}
       <section className="news-list">
+        {loading && <p>Loading news...</p>}
+        {!loading && newsItems.length === 0 && (
+          <p>No news available right now.</p>
+        )}
         {newsItems.map((item) => {
           const isRead = readItems[item.id];
 
@@ -87,7 +95,7 @@ function App() {
               <h2>{item.title}</h2>
               <p>
                 <a href={item.url} target="_blank" rel="noreferrer">
-                  {item.url}
+                  Read article →
                 </a>
               </p>
               <button
