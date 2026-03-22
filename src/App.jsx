@@ -20,6 +20,9 @@ async function fetchNews() {
 function App() {
   const [newsItems, setNewsItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [showUnreadOnly, setShowUnreadOnly] = useState(false);
   const [readItems, setReadItems] = useState(() => {
     const savedItems = localStorage.getItem(STORAGE_KEY);
 
@@ -32,11 +35,16 @@ function App() {
 
   const loadNews = useCallback(async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const items = await fetchNews();
       setNewsItems(items);
+      setLastUpdated(new Date());
     } catch (error) {
       console.error("Failed to fetch news:", error);
+      setFetchError(
+        "Couldn’t load news. Check your connection and tap Refresh.",
+      );
     } finally {
       setLoading(false);
     }
@@ -67,24 +75,56 @@ function App() {
     });
   };
 
+  const displayedItems = showUnreadOnly
+    ? newsItems.filter((item) => !readItems[item.id])
+    : newsItems;
+
+  const lastUpdatedLabel =
+    lastUpdated != null
+      ? lastUpdated.toLocaleTimeString(undefined, {
+          hour: "numeric",
+          minute: "2-digit",
+        })
+      : null;
+
   return (
     <main className="page">
       <h1>AI News Radar</h1>
       <p className="subtitle">Latest AI-related stories from Hacker News</p>
-      <button className="refresh-button" onClick={() => void loadNews()}>
-        Refresh News
-      </button>
-      {newsItems.length > 0 && (
-        <button className="refresh-button" onClick={markAllAsRead}>
-          Mark all as read
-        </button>
+      {lastUpdatedLabel && (
+        <p className="meta-updated">Last updated {lastUpdatedLabel}</p>
       )}
+      <div className="toolbar">
+        <button className="refresh-button" onClick={() => void loadNews()}>
+          Refresh News
+        </button>
+        {newsItems.length > 0 && (
+          <button className="refresh-button" onClick={markAllAsRead}>
+            Mark all as read
+          </button>
+        )}
+        {newsItems.length > 0 && (
+          <label className="filter-toggle">
+            <input
+              type="checkbox"
+              checked={showUnreadOnly}
+              onChange={(e) => setShowUnreadOnly(e.target.checked)}
+            />
+            Show unread only
+          </label>
+        )}
+      </div>
       <section className="news-list">
         {loading && <p>Loading news...</p>}
-        {!loading && newsItems.length === 0 && (
+        {fetchError && <p className="error-message">{fetchError}</p>}
+        {!loading && newsItems.length === 0 && !fetchError && (
           <p>No news available right now.</p>
         )}
-        {newsItems.map((item) => {
+        {!loading &&
+          newsItems.length > 0 &&
+          displayedItems.length === 0 &&
+          showUnreadOnly && <p>All stories in this list are read.</p>}
+        {displayedItems.map((item) => {
           const isRead = readItems[item.id];
 
           return (
