@@ -1,23 +1,10 @@
 import { useEffect, useState } from "react";
 
-const newsItems = [
-  {
-    title: "OpenAI update",
-    summary: "OpenAI previews faster multimodal reasoning for assistant workflows.",
-  },
-  {
-    title: "Anthropic update",
-    summary: "Anthropic announces improved model reliability for coding tasks.",
-  },
-  {
-    title: "Google DeepMind update",
-    summary: "DeepMind shares progress on agent planning and tool use.",
-  },
-];
-
 const STORAGE_KEY = "ai-news-radar-read-items";
+const NEWS_API_URL = "https://hn.algolia.com/api/v1/search?query=ai";
 
 function App() {
+  const [newsItems, setNewsItems] = useState([]);
   const [readItems, setReadItems] = useState(() => {
     const savedItems = localStorage.getItem(STORAGE_KEY);
 
@@ -29,39 +16,83 @@ function App() {
   });
 
   useEffect(() => {
+    const fetchNews = async () => {
+      try {
+        const response = await fetch(NEWS_API_URL);
+        const data = await response.json();
+
+        const items = data.hits
+          .filter((item) => item.title && item.url)
+          .slice(0, 10)
+          .map((item) => ({
+            id: item.objectID,
+            title: item.title,
+            url: item.url,
+          }));
+
+        setNewsItems(items);
+      } catch (error) {
+        console.error("Failed to fetch news:", error);
+      }
+    };
+
+    fetchNews();
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(readItems));
   }, [readItems]);
 
-  const handleRefresh = () => {
-    alert("Refresh coming soon");
+  const handleRefresh = async () => {
+    try {
+      const response = await fetch(NEWS_API_URL);
+      const data = await response.json();
+
+      const items = data.hits
+        .filter((item) => item.title && item.url)
+        .slice(0, 10)
+        .map((item) => ({
+          id: item.objectID,
+          title: item.title,
+          url: item.url,
+        }));
+
+      setNewsItems(items);
+    } catch (error) {
+      console.error("Failed to refresh news:", error);
+    }
   };
 
-  const toggleRead = (title) => {
+  const toggleRead = (id) => {
     setReadItems((currentReadItems) => ({
       ...currentReadItems,
-      [title]: !currentReadItems[title],
+      [id]: !currentReadItems[id],
     }));
   };
 
   return (
     <main className="page">
       <h1>AI News Radar</h1>
-      <p className="subtitle">Example feed (hard-coded for now)</p>
+      <p className="subtitle">Latest AI-related stories from Hacker News</p>
       <button className="refresh-button" onClick={handleRefresh}>Refresh News</button>
       <section className="news-list">
         {newsItems.map((item) => {
-          const isRead = readItems[item.title];
+          const isRead = readItems[item.id];
 
           return (
             <article
-              key={item.title}
+              key={item.id}
               className={`news-card ${isRead ? "news-card-read" : ""}`.trim()}
             >
               <h2>{item.title}</h2>
-              <p>{item.summary}</p>
+              <p>
+                <a href={item.url} target="_blank" rel="noreferrer">
+                  {item.url}
+                </a>
+              </p>
               <button
                 className="toggle-read-button"
-                onClick={() => toggleRead(item.title)}
+                onClick={() => toggleRead(item.id)}
               >
                 Mark as {isRead ? "Unread" : "Read"}
               </button>

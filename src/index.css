@@ -71,6 +71,16 @@ h1 {
   color: #374151;
 }
 
+.news-card a {
+  color: #2563eb;
+  text-decoration: none;
+  word-break: break-word;
+}
+
+.news-card a:hover {
+  text-decoration: underline;
+}
+
 .toggle-read-button {
   padding: 0.5rem 0.85rem;
   border: 1px solid #d1d5db;
