@@ -42,6 +42,32 @@ function isRecentEnough(dateString) {
   return diffMs <= maxAgeMs;
 }
 
+async function fetchNewsItems() {
+  const response = await fetch(NEWS_API_URL);
+  const data = await response.json();
+  const seenUrls = new Set();
+
+  return data.hits
+    .filter((item) => item.title && item.url && isRecentEnough(item.created_at))
+    .filter((item) => {
+      if (seenUrls.has(item.url)) {
+        return false;
+      }
+
+      seenUrls.add(item.url);
+      return true;
+    })
+    .slice(0, MAX_ITEMS)
+    .map((item) => ({
+      id: item.objectID,
+      title: item.title,
+      url: item.url,
+      points: item.points ?? 0,
+      comments: item.num_comments ?? 0,
+      createdAt: item.created_at,
+    }));
+}
+
 function App() {
   const [newsItems, setNewsItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -56,46 +82,23 @@ function App() {
     return JSON.parse(savedItems);
   });
 
+  const loadNews = async (errorMessage) => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const items = await fetchNewsItems();
+      setNewsItems(items);
+    } catch (fetchError) {
+      console.error("Failed to fetch news:", fetchError);
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchNews = async () => {
-      try {
-        setLoading(true);
-        setError("");
-
-        const response = await fetch(NEWS_API_URL);
-        const data = await response.json();
-        const seenUrls = new Set();
-
-        const items = data.hits
-          .filter((item) => item.title && item.url && isRecentEnough(item.created_at))
-          .filter((item) => {
-            if (seenUrls.has(item.url)) {
-              return false;
-            }
-
-            seenUrls.add(item.url);
-            return true;
-          })
-          .slice(0, MAX_ITEMS)
-          .map((item) => ({
-            id: item.objectID,
-            title: item.title,
-            url: item.url,
-            points: item.points ?? 0,
-            comments: item.num_comments ?? 0,
-            createdAt: item.created_at,
-          }));
-
-        setNewsItems(items);
-      } catch (fetchError) {
-        console.error("Failed to fetch news:", fetchError);
-        setError("Could not load news right now.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchNews();
+    loadNews("Could not load news right now.");
   }, []);
 
   useEffect(() => {
@@ -103,41 +106,7 @@ function App() {
   }, [readItems]);
 
   const handleRefresh = async () => {
-    try {
-      setLoading(true);
-      setError("");
-
-      const response = await fetch(NEWS_API_URL);
-      const data = await response.json();
-      const seenUrls = new Set();
-
-      const items = data.hits
-        .filter((item) => item.title && item.url && isRecentEnough(item.created_at))
-        .filter((item) => {
-          if (seenUrls.has(item.url)) {
-            return false;
-          }
-
-          seenUrls.add(item.url);
-          return true;
-        })
-        .slice(0, MAX_ITEMS)
-        .map((item) => ({
-          id: item.objectID,
-          title: item.title,
-          url: item.url,
-          points: item.points ?? 0,
-          comments: item.num_comments ?? 0,
-          createdAt: item.created_at,
-        }));
-
-      setNewsItems(items);
-    } catch (fetchError) {
-      console.error("Failed to refresh news:", fetchError);
-      setError("Could not refresh news right now.");
-    } finally {
-      setLoading(false);
-    }
+    await loadNews("Could not refresh news right now.");
   };
 
   const toggleRead = (id) => {
