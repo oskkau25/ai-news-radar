@@ -14,7 +14,54 @@ async function fetchNews() {
       id: item.objectID,
       title: item.title,
       url: item.url,
+      points: item.points ?? 0,
+      comments: item.num_comments ?? 0,
+      createdAt: item.created_at,
     }));
+}
+
+function formatHoursAgo(dateString) {
+  const publishedAtMs = Date.parse(dateString);
+  if (Number.isNaN(publishedAtMs)) {
+    return "recently";
+  }
+
+  const diffMs = Date.now() - publishedAtMs;
+  const diffHours = Math.max(1, Math.round(diffMs / (1000 * 60 * 60)));
+  return `${diffHours}h ago`;
+}
+
+function getImportanceScore(item) {
+  return (item.points ?? 0) + (item.comments ?? 0) * 2;
+}
+
+function buildDigestText(items) {
+  if (items.length === 0) {
+    return "AI News Radar Daily\n\nNo major AI stories found right now.";
+  }
+
+  const topItems = [...items]
+    .sort((a, b) => getImportanceScore(b) - getImportanceScore(a))
+    .slice(0, 5);
+
+  const lines = [
+    `AI News Radar Daily - ${new Date().toLocaleDateString()}`,
+    "",
+    "Top stories:",
+  ];
+
+  topItems.forEach((item, index) => {
+    lines.push(
+      `${index + 1}. ${item.title} (${item.points} points, ${item.comments} comments, ${formatHoursAgo(item.createdAt)})`,
+    );
+  });
+
+  lines.push("", "Links:");
+  topItems.forEach((item) => {
+    lines.push(`- ${item.url}`);
+  });
+
+  return lines.join("\n");
 }
 
 function App() {
@@ -23,6 +70,8 @@ function App() {
   const [fetchError, setFetchError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
+  const [digestText, setDigestText] = useState("");
+  const [digestNotice, setDigestNotice] = useState("");
   const [readItems, setReadItems] = useState(() => {
     const savedItems = localStorage.getItem(STORAGE_KEY);
 
@@ -75,6 +124,26 @@ function App() {
     });
   };
 
+  const generateDigest = () => {
+    const digest = buildDigestText(newsItems);
+    setDigestText(digest);
+    setDigestNotice("");
+  };
+
+  const copyDigest = async () => {
+    if (!digestText) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(digestText);
+      setDigestNotice("Digest copied. Paste it into WhatsApp.");
+    } catch (error) {
+      console.error("Failed to copy digest:", error);
+      setDigestNotice("Copy failed. Select and copy manually.");
+    }
+  };
+
   const displayedItems = showUnreadOnly
     ? newsItems.filter((item) => !readItems[item.id])
     : newsItems;
@@ -101,6 +170,11 @@ function App() {
         {newsItems.length > 0 && (
           <button className="refresh-button" onClick={markAllAsRead}>
             Mark all as read
+          </button>
+        )}
+        {newsItems.length > 0 && (
+          <button className="refresh-button" onClick={generateDigest}>
+            Generate daily digest
           </button>
         )}
         {newsItems.length > 0 && (
@@ -148,6 +222,18 @@ function App() {
           );
         })}
       </section>
+      {digestText && (
+        <section className="digest-card">
+          <div className="digest-header">
+            <h2>Digest Preview</h2>
+            <button className="toggle-read-button" onClick={() => void copyDigest()}>
+              Copy for WhatsApp
+            </button>
+          </div>
+          <pre className="digest-text">{digestText}</pre>
+          {digestNotice && <p className="meta-updated">{digestNotice}</p>}
+        </section>
+      )}
     </main>
   );
 }
