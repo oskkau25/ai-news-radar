@@ -30,6 +30,38 @@ h1 {
   color: #4b5563;
 }
 
+.meta-updated {
+  margin: 0 0 0.75rem;
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.toolbar .refresh-button {
+  margin-bottom: 0;
+}
+
+.filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  color: #374151;
+  cursor: pointer;
+  user-select: none;
+}
+
+.filter-toggle input {
+  cursor: pointer;
+}
+
 .error-message {
   margin: 0 0 0.75rem;
   padding: 0.65rem 0.85rem;
@@ -59,11 +91,24 @@ h1 {
   gap: 1rem;
 }
 
+@media (min-width: 900px) {
+  .news-list {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 .news-card {
   background: #ffffff;
   border: 1px solid #e5e7eb;
   border-radius: 10px;
   padding: 1rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.news-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
 }
 
 .news-card-read {
@@ -108,5 +153,39 @@ h1 {
 
 .toggle-read-button:hover {
   background: #f9fafb;
+}
+
+.digest-card {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+
+.digest-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.digest-header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.digest-text {
+  margin: 0;
+  padding: 0.85rem;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 

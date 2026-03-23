@@ -1,9 +1,25 @@
 import { useEffect, useState } from "react";
 
 const STORAGE_KEY = "ai-news-radar-read-items";
-const NEWS_API_URL = "https://hn.algolia.com/api/v1/search?query=ai";
-const MAX_ITEMS = 10;
-const MAX_AGE_DAYS = 14;
+const NEWS_API_URL = "https://hn.algolia.com/api/v1/search?query=artificial%20intelligence";
+const MAX_ITEMS = 5;
+const AI_KEYWORDS = [
+  "ai",
+  "artificial intelligence",
+  "machine learning",
+  "deep learning",
+  "llm",
+  "gpt",
+  "openai",
+  "anthropic",
+  "deepmind",
+  "hugging face",
+  "transformer",
+  "neural network",
+  "claude",
+  "gemini",
+  "agent",
+];
 
 function formatTimeAgo(dateString) {
   const publishedAt = new Date(dateString);
@@ -29,17 +45,42 @@ function formatTimeAgo(dateString) {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-function isRecentEnough(dateString) {
-  const publishedAt = new Date(dateString);
+function getImportanceScore(item) {
+  return (item.points ?? 0) + (item.comments ?? 0) * 2;
+}
 
-  if (Number.isNaN(publishedAt.getTime())) {
-    return false;
+function isAiRelated(text) {
+  const normalizedText = text.toLowerCase();
+  return AI_KEYWORDS.some((keyword) => normalizedText.includes(keyword));
+}
+
+function buildDigestText(items) {
+  if (items.length === 0) {
+    return "AI News Radar Daily\n\nNo major AI stories found right now.";
   }
 
-  const diffMs = Date.now() - publishedAt.getTime();
-  const maxAgeMs = MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+  const topItems = [...items]
+    .sort((a, b) => getImportanceScore(b) - getImportanceScore(a))
+    .slice(0, 5);
 
-  return diffMs <= maxAgeMs;
+  const lines = [
+    `AI News Radar Daily - ${new Date().toLocaleDateString()}`,
+    "",
+    "Top stories:",
+  ];
+
+  topItems.forEach((item, index) => {
+    lines.push(
+      `${index + 1}. ${item.title} (${item.points} points, ${item.comments} comments, ${formatTimeAgo(item.createdAt)})`,
+    );
+  });
+
+  lines.push("", "Links:");
+  topItems.forEach((item) => {
+    lines.push(`- ${item.url}`);
+  });
+
+  return lines.join("\n");
 }
 
 async function fetchNewsItems() {
@@ -48,7 +89,8 @@ async function fetchNewsItems() {
   const seenUrls = new Set();
 
   return data.hits
-    .filter((item) => item.title && item.url && isRecentEnough(item.created_at))
+    .filter((item) => item.title && item.url)
+    .filter((item) => isAiRelated(item.title))
     .filter((item) => {
       if (seenUrls.has(item.url)) {
         return false;
@@ -72,6 +114,10 @@ function App() {
   const [newsItems, setNewsItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [showUnreadOnly, setShowUnreadOnly] = useState(false);
+  const [digestText, setDigestText] = useState("");
+  const [digestNotice, setDigestNotice] = useState("");
   const [readItems, setReadItems] = useState(() => {
     const savedItems = localStorage.getItem(STORAGE_KEY);
 
@@ -89,6 +135,7 @@ function App() {
 
       const items = await fetchNewsItems();
       setNewsItems(items);
+      setLastUpdated(new Date());
     } catch (fetchError) {
       console.error("Failed to fetch news:", fetchError);
       setError(errorMessage);
@@ -116,18 +163,93 @@ function App() {
     }));
   };
 
+  const markAllAsRead = () => {
+    setReadItems((currentReadItems) => {
+      const nextReadItems = { ...currentReadItems };
+      for (const item of newsItems) {
+        nextReadItems[item.id] = true;
+      }
+      return nextReadItems;
+    });
+  };
+
+  const generateDigest = () => {
+    const digestSource = showUnreadOnly
+      ? newsItems.filter((item) => !readItems[item.id])
+      : newsItems;
+    setDigestText(buildDigestText(digestSource));
+    setDigestNotice("");
+  };
+
+  const copyDigest = async () => {
+    if (!digestText) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(digestText);
+      setDigestNotice("Digest copied. Paste it into WhatsApp.");
+    } catch (copyError) {
+      console.error("Failed to copy digest:", copyError);
+      setDigestNotice("Copy failed. Select and copy manually.");
+    }
+  };
+
+  const displayedItems = showUnreadOnly
+    ? newsItems.filter((item) => !readItems[item.id])
+    : newsItems;
+
+  const lastUpdatedLabel =
+    lastUpdated != null
+      ? lastUpdated.toLocaleTimeString(undefined, {
+          hour: "numeric",
+          minute: "2-digit",
+        })
+      : null;
+
   return (
     <main className="page">
       <h1>AI News Radar</h1>
       <p className="subtitle">Latest AI-related stories from Hacker News</p>
-      <button className="refresh-button" onClick={handleRefresh}>Refresh News</button>
+      {lastUpdatedLabel && (
+        <p className="meta-updated">Last updated {lastUpdatedLabel}</p>
+      )}
+      <div className="toolbar">
+        <button className="refresh-button" onClick={handleRefresh}>
+          Refresh News
+        </button>
+        {newsItems.length > 0 && (
+          <button className="refresh-button" onClick={markAllAsRead}>
+            Mark all as read
+          </button>
+        )}
+        {newsItems.length > 0 && (
+          <button className="refresh-button" onClick={generateDigest}>
+            Generate daily digest
+          </button>
+        )}
+        {newsItems.length > 0 && (
+          <label className="filter-toggle">
+            <input
+              type="checkbox"
+              checked={showUnreadOnly}
+              onChange={(event) => setShowUnreadOnly(event.target.checked)}
+            />
+            Show unread only
+          </label>
+        )}
+      </div>
       <section className="news-list">
         {loading && <p>Loading news...</p>}
         {error && <p className="error-message">{error}</p>}
         {!loading && !error && newsItems.length === 0 && (
           <p>No recent AI news found.</p>
         )}
-        {newsItems.map((item) => {
+        {!loading &&
+          newsItems.length > 0 &&
+          displayedItems.length === 0 &&
+          showUnreadOnly && <p>All stories in this list are read.</p>}
+        {displayedItems.map((item) => {
           const isRead = readItems[item.id];
 
           return (
@@ -138,7 +260,7 @@ function App() {
               <h2>{item.title}</h2>
               <p>
                 <a href={item.url} target="_blank" rel="noreferrer">
-                  {item.url}
+                  Read article →
                 </a>
               </p>
               <p className="news-meta">
@@ -154,6 +276,18 @@ function App() {
           );
         })}
       </section>
+      {digestText && (
+        <section className="digest-card">
+          <div className="digest-header">
+            <h2>Digest Preview</h2>
+            <button className="toggle-read-button" onClick={() => void copyDigest()}>
+              Copy for WhatsApp
+            </button>
+          </div>
+          <pre className="digest-text">{digestText}</pre>
+          {digestNotice && <p className="meta-updated">{digestNotice}</p>}
+        </section>
+      )}
     </main>
   );
 }
