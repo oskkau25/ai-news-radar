@@ -1,77 +1,51 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 const STORAGE_KEY = "ai-news-radar-read-items";
 const NEWS_API_URL = "https://hn.algolia.com/api/v1/search?query=ai";
+const MAX_ITEMS = 10;
+const MAX_AGE_DAYS = 14;
 
-async function fetchNews() {
-  const response = await fetch(NEWS_API_URL);
-  const data = await response.json();
+function formatTimeAgo(dateString) {
+  const publishedAt = new Date(dateString);
+  const now = new Date();
+  const diffMs = now - publishedAt;
 
-  return data.hits
-    .filter((item) => item.title && item.url)
-    .slice(0, 10)
-    .map((item) => ({
-      id: item.objectID,
-      title: item.title,
-      url: item.url,
-      points: item.points ?? 0,
-      comments: item.num_comments ?? 0,
-      createdAt: item.created_at,
-    }));
-}
-
-function formatHoursAgo(dateString) {
-  const publishedAtMs = Date.parse(dateString);
-  if (Number.isNaN(publishedAtMs)) {
-    return "recently";
+  if (Number.isNaN(publishedAt.getTime())) {
+    return "Recently";
   }
 
-  const diffMs = Date.now() - publishedAtMs;
-  const diffHours = Math.max(1, Math.round(diffMs / (1000 * 60 * 60)));
-  return `${diffHours}h ago`;
-}
+  const minutes = Math.floor(diffMs / (1000 * 60));
+  const hours = Math.floor(diffMs / (1000 * 60 * 60));
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-function getImportanceScore(item) {
-  return (item.points ?? 0) + (item.comments ?? 0) * 2;
-}
-
-function buildDigestText(items) {
-  if (items.length === 0) {
-    return "AI News Radar Daily\n\nNo major AI stories found right now.";
+  if (minutes < 60) {
+    return `${Math.max(minutes, 1)} minute${minutes === 1 ? "" : "s"} ago`;
   }
 
-  const topItems = [...items]
-    .sort((a, b) => getImportanceScore(b) - getImportanceScore(a))
-    .slice(0, 5);
+  if (hours < 24) {
+    return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  }
 
-  const lines = [
-    `AI News Radar Daily - ${new Date().toLocaleDateString()}`,
-    "",
-    "Top stories:",
-  ];
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
 
-  topItems.forEach((item, index) => {
-    lines.push(
-      `${index + 1}. ${item.title} (${item.points} points, ${item.comments} comments, ${formatHoursAgo(item.createdAt)})`,
-    );
-  });
+function isRecentEnough(dateString) {
+  const publishedAt = new Date(dateString);
 
-  lines.push("", "Links:");
-  topItems.forEach((item) => {
-    lines.push(`- ${item.url}`);
-  });
+  if (Number.isNaN(publishedAt.getTime())) {
+    return false;
+  }
 
-  return lines.join("\n");
+  const diffMs = Date.now() - publishedAt.getTime();
+  const maxAgeMs = MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+
+  return diffMs <= maxAgeMs;
 }
 
 function App() {
   const [newsItems, setNewsItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState(null);
-  const [lastUpdated, setLastUpdated] = useState(null);
-  const [showUnreadOnly, setShowUnreadOnly] = useState(false);
-  const [digestText, setDigestText] = useState("");
-  const [digestNotice, setDigestNotice] = useState("");
+  const [error, setError] = useState("");
   const [readItems, setReadItems] = useState(() => {
     const savedItems = localStorage.getItem(STORAGE_KEY);
 
@@ -82,30 +56,89 @@ function App() {
     return JSON.parse(savedItems);
   });
 
-  const loadNews = useCallback(async () => {
-    setLoading(true);
-    setFetchError(null);
-    try {
-      const items = await fetchNews();
-      setNewsItems(items);
-      setLastUpdated(new Date());
-    } catch (error) {
-      console.error("Failed to fetch news:", error);
-      setFetchError(
-        "Couldn’t load news. Check your connection and tap Refresh.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    void loadNews();
-  }, [loadNews]);
+    const fetchNews = async () => {
+      try {
+        setLoading(true);
+        setError("");
+
+        const response = await fetch(NEWS_API_URL);
+        const data = await response.json();
+        const seenUrls = new Set();
+
+        const items = data.hits
+          .filter((item) => item.title && item.url && isRecentEnough(item.created_at))
+          .filter((item) => {
+            if (seenUrls.has(item.url)) {
+              return false;
+            }
+
+            seenUrls.add(item.url);
+            return true;
+          })
+          .slice(0, MAX_ITEMS)
+          .map((item) => ({
+            id: item.objectID,
+            title: item.title,
+            url: item.url,
+            points: item.points ?? 0,
+            comments: item.num_comments ?? 0,
+            createdAt: item.created_at,
+          }));
+
+        setNewsItems(items);
+      } catch (fetchError) {
+        console.error("Failed to fetch news:", fetchError);
+        setError("Could not load news right now.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchNews();
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(readItems));
   }, [readItems]);
+
+  const handleRefresh = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await fetch(NEWS_API_URL);
+      const data = await response.json();
+      const seenUrls = new Set();
+
+      const items = data.hits
+        .filter((item) => item.title && item.url && isRecentEnough(item.created_at))
+        .filter((item) => {
+          if (seenUrls.has(item.url)) {
+            return false;
+          }
+
+          seenUrls.add(item.url);
+          return true;
+        })
+        .slice(0, MAX_ITEMS)
+        .map((item) => ({
+          id: item.objectID,
+          title: item.title,
+          url: item.url,
+          points: item.points ?? 0,
+          comments: item.num_comments ?? 0,
+          createdAt: item.created_at,
+        }));
+
+      setNewsItems(items);
+    } catch (fetchError) {
+      console.error("Failed to refresh news:", fetchError);
+      setError("Could not refresh news right now.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const toggleRead = (id) => {
     setReadItems((currentReadItems) => ({
@@ -114,91 +147,18 @@ function App() {
     }));
   };
 
-  const markAllAsRead = () => {
-    setReadItems((current) => {
-      const next = { ...current };
-      for (const item of newsItems) {
-        next[item.id] = true;
-      }
-      return next;
-    });
-  };
-
-  const generateDigest = () => {
-    const digest = buildDigestText(newsItems);
-    setDigestText(digest);
-    setDigestNotice("");
-  };
-
-  const copyDigest = async () => {
-    if (!digestText) {
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(digestText);
-      setDigestNotice("Digest copied. Paste it into WhatsApp.");
-    } catch (error) {
-      console.error("Failed to copy digest:", error);
-      setDigestNotice("Copy failed. Select and copy manually.");
-    }
-  };
-
-  const displayedItems = showUnreadOnly
-    ? newsItems.filter((item) => !readItems[item.id])
-    : newsItems;
-
-  const lastUpdatedLabel =
-    lastUpdated != null
-      ? lastUpdated.toLocaleTimeString(undefined, {
-          hour: "numeric",
-          minute: "2-digit",
-        })
-      : null;
-
   return (
     <main className="page">
       <h1>AI News Radar</h1>
       <p className="subtitle">Latest AI-related stories from Hacker News</p>
-      {lastUpdatedLabel && (
-        <p className="meta-updated">Last updated {lastUpdatedLabel}</p>
-      )}
-      <div className="toolbar">
-        <button className="refresh-button" onClick={() => void loadNews()}>
-          Refresh News
-        </button>
-        {newsItems.length > 0 && (
-          <button className="refresh-button" onClick={markAllAsRead}>
-            Mark all as read
-          </button>
-        )}
-        {newsItems.length > 0 && (
-          <button className="refresh-button" onClick={generateDigest}>
-            Generate daily digest
-          </button>
-        )}
-        {newsItems.length > 0 && (
-          <label className="filter-toggle">
-            <input
-              type="checkbox"
-              checked={showUnreadOnly}
-              onChange={(e) => setShowUnreadOnly(e.target.checked)}
-            />
-            Show unread only
-          </label>
-        )}
-      </div>
+      <button className="refresh-button" onClick={handleRefresh}>Refresh News</button>
       <section className="news-list">
         {loading && <p>Loading news...</p>}
-        {fetchError && <p className="error-message">{fetchError}</p>}
-        {!loading && newsItems.length === 0 && !fetchError && (
-          <p>No news available right now.</p>
+        {error && <p className="error-message">{error}</p>}
+        {!loading && !error && newsItems.length === 0 && (
+          <p>No recent AI news found.</p>
         )}
-        {!loading &&
-          newsItems.length > 0 &&
-          displayedItems.length === 0 &&
-          showUnreadOnly && <p>All stories in this list are read.</p>}
-        {displayedItems.map((item) => {
+        {newsItems.map((item) => {
           const isRead = readItems[item.id];
 
           return (
@@ -209,8 +169,11 @@ function App() {
               <h2>{item.title}</h2>
               <p>
                 <a href={item.url} target="_blank" rel="noreferrer">
-                  Read article →
+                  {item.url}
                 </a>
+              </p>
+              <p className="news-meta">
+                {item.points} points • {item.comments} comments • {formatTimeAgo(item.createdAt)}
               </p>
               <button
                 className="toggle-read-button"
@@ -222,18 +185,6 @@ function App() {
           );
         })}
       </section>
-      {digestText && (
-        <section className="digest-card">
-          <div className="digest-header">
-            <h2>Digest Preview</h2>
-            <button className="toggle-read-button" onClick={() => void copyDigest()}>
-              Copy for WhatsApp
-            </button>
-          </div>
-          <pre className="digest-text">{digestText}</pre>
-          {digestNotice && <p className="meta-updated">{digestNotice}</p>}
-        </section>
-      )}
     </main>
   );
 }
